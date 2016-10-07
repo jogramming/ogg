@@ -29,6 +29,13 @@ type Page struct {
 	Serial uint32
 	// Granule is the granule position, whose meaning is dependent on the encapsulated codec.
 	Granule int64
+
+	Page  uint32 // 18-21, sequence number of page in packet
+	Crc   uint32 // 22-25
+	Nsegs byte   // 26
+
+	SegTbl []byte
+
 	// Packet is the raw packet data.
 	// If Type & COP != 0, this is a continuation of the previous page's packet.
 	Packet []byte
@@ -126,6 +133,14 @@ func (d *Decoder) Decode() (Page, error) {
 	if crc != h.Crc {
 		return Page{}, ErrBadCrc{h.Crc, crc}
 	}
-
-	return Page{h.HeaderType, h.Serial, h.Granule, packet}, nil
+	return Page{
+		Type:    h.HeaderType,
+		Serial:  h.Serial,
+		Granule: h.Granule,
+		Packet:  packet,
+		Page:    h.Page,
+		Nsegs:   h.Nsegs,
+		Crc:     h.Crc,
+		SegTbl:  segtbl,
+	}, nil
 }
