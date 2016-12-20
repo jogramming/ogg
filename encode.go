@@ -52,6 +52,7 @@ func (w *Encoder) EncodeEOS() error {
 	return w.writePacket(EOS, 0, nil)
 }
 
+// Todo allow multiple packets
 func (w *Encoder) writePacket(kind byte, granule int64, packet []byte) error {
 	h := pageHeader{
 		OggS:       [4]byte{'O', 'g', 'g', 'S'},
@@ -60,49 +61,48 @@ func (w *Encoder) writePacket(kind byte, granule int64, packet []byte) error {
 		Granule:    granule,
 	}
 
-	var err error
-
-	s := 0
-	e := s + mps
-	if e > len(packet) {
-		e = len(packet)
+	if len(packet) > MaxPacketSize {
+		panic("Packet > MaxPacketSize")
 	}
-	page := packet[s:e]
-	err = w.writePage(page, &h)
+
+	err := w.writePage(packet, &h)
 	if err != nil {
 		return err
 	}
-	s = e
 
-	last := (len(packet) / mps) * mps
-	h.HeaderType |= COP
-	for s < last {
-		h.Page++
-		e = s + mps
-		page = packet[s:e]
-		err = w.writePage(page, &h)
-		if err != nil {
-			return err
-		}
-		s = e
-	}
+	// last := (len(packet) / MaxPacketSize) * MaxPacketSize
+	// h.HeaderType |= COP
+	// for s < last {
+	// 	h.Page++
+	// 	e = s + MaxPacketSize
+	// 	page = packet[s:e]
+	// 	err = w.writePage(page, &h)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	s = e
+	// }
 
-	if s != len(packet) {
-		err = w.writePage(packet[s:], &h)
-	}
-	return err
+	// if s != len(packet) {
+	// 	err = w.writePage(packet[s:], &h)
+	// }
+	return nil
 }
 
 func (w *Encoder) writePage(page []byte, h *pageHeader) error {
+
 	h.Nsegs = byte(len(page) / 255)
+
 	rem := byte(len(page) % 255)
 	if rem > 0 || len(page) == 0 {
 		h.Nsegs++
 	}
+
 	segtbl := make([]byte, h.Nsegs)
 	for i := 0; i < len(segtbl); i++ {
 		segtbl[i] = 255
 	}
+
 	if rem > 0 || len(page) == 0 {
 		segtbl[len(segtbl)-1] = rem
 	}

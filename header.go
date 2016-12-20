@@ -15,16 +15,16 @@ import (
 // The MIME type as defined in RFC 3534.
 const MIMEType = "application/ogg"
 
-const headsz = 27
+const HeaderSize = 27
 
 // max segment size
-const mss = 255
+const MaxSegmentSize = 255
 
 // max packet size
-const mps = mss * 255
+const MaxPacketSize = MaxSegmentSize * 255
 
 // == 65307, per the RFC
-const maxPageSize = headsz + mss + mps
+const maxPageSize = HeaderSize + MaxSegmentSize + MaxPacketSize
 
 // The byte order of integers in ogg page headers.
 var byteOrder = binary.LittleEndian

@@ -36,9 +36,41 @@ type Page struct {
 
 	SegTbl []byte
 
-	// Packet is the raw packet data.
+	// Data is the raw packet data.
 	// If Type & COP != 0, this is a continuation of the previous page's packet.
-	Packet []byte
+	Data []byte
+
+	currentIndex int
+	currentPos   int
+}
+
+// ReadPacket reads the next packet or returns io.EOF if no more.
+// Complete is false when the the packet was uncomplete (it was the last one and will continue next page)
+func (p *Page) ReadPacket() (packet []byte, complete bool, err error) {
+	packet = make([]byte, 0)
+	complete = false
+
+	if p.currentIndex >= len(p.SegTbl) {
+		return nil, true, io.EOF
+	}
+
+	// Read each segment from the segment table until we either ran out or hit the packet boundry
+	for p.currentIndex < len(p.SegTbl) {
+
+		segment := p.SegTbl[p.currentIndex]
+
+		packet = append(packet, p.Data[p.currentPos:p.currentPos+int(segment)]...)
+
+		p.currentPos += int(segment)
+		p.currentIndex++
+
+		if segment < 255 {
+			complete = true
+			break
+		}
+	}
+
+	return
 }
 
 // ErrBadSegs is the error used when trying to decode a page with a segment table size less than 1.
@@ -66,7 +98,7 @@ var oggs = []byte{'O', 'g', 'g', 'S'}
 // It is safe to call Decode concurrently on distinct Decoders if their Readers are distinct.
 // Otherwise, the behavior is undefined.
 func (d *Decoder) Decode() (Page, error) {
-	hbuf := d.buf[0:headsz]
+	hbuf := d.buf[0:HeaderSize]
 	b := 0
 	for {
 		_, err := io.ReadFull(d.r, hbuf[b:])
@@ -80,7 +112,7 @@ func (d *Decoder) Decode() (Page, error) {
 		}
 
 		if i < 0 {
-			const n = headsz
+			const n = HeaderSize
 			if hbuf[n-1] == 'O' {
 				i = n - 1
 			} else if hbuf[n-2] == 'O' && hbuf[n-1] == 'g' {
@@ -103,27 +135,24 @@ func (d *Decoder) Decode() (Page, error) {
 	}
 
 	nsegs := int(h.Nsegs)
-	segtbl := d.buf[headsz : headsz+nsegs]
+	segtbl := d.buf[HeaderSize : HeaderSize+nsegs]
 	_, err := io.ReadFull(d.r, segtbl)
 	if err != nil {
 		return Page{}, err
 	}
 
-	packetlen := 0
-	// This seems to contradict the spec, which says a segment with length < 255
-	// indicates the end of a packet. But hey, libogg puts out short non-final segments,
-	// so what can I do.
+	pageDataLen := 0
 	for _, l := range segtbl {
-		packetlen += int(l)
+		pageDataLen += int(l)
 	}
 
-	packet := d.buf[headsz+nsegs : headsz+nsegs+packetlen]
+	packet := d.buf[HeaderSize+nsegs : HeaderSize+nsegs+pageDataLen]
 	_, err = io.ReadFull(d.r, packet)
 	if err != nil {
 		return Page{}, err
 	}
 
-	page := d.buf[0 : headsz+nsegs+packetlen]
+	page := d.buf[0 : HeaderSize+nsegs+pageDataLen]
 	// Clear out existing crc before calculating it
 	page[22] = 0
 	page[23] = 0
@@ -137,7 +166,7 @@ func (d *Decoder) Decode() (Page, error) {
 		Type:    h.HeaderType,
 		Serial:  h.Serial,
 		Granule: h.Granule,
-		Packet:  packet,
+		Data:    packet,
 		Page:    h.Page,
 		Nsegs:   h.Nsegs,
 		Crc:     h.Crc,
